@@ -1,1 +1,430 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<title>급식 선호도 조사</title>
+
+<link rel="stylesheet"
+href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+
+<style>
+body{
+margin:0;
+font-family:'Pretendard', sans-serif;
+background:#f6f7fb;
+}
+
+.header{
+background:linear-gradient(90deg,#ffcc00,#ffb300);
+padding:22px;
+text-align:center;
+font-weight:900;
+font-size:22px;
+}
+
+.container{
+max-width:900px;
+margin:20px auto;
+padding:20px;
+}
+
+.card{
+background:white;
+padding:20px;
+margin-bottom:20px;
+border-radius:16px;
+box-shadow:0 6px 18px rgba(0,0,0,0.08);
+text-align:center;
+}
+
+input{
+width:90%;
+padding:14px;
+border-radius:12px;
+border:1px solid #ddd;
+font-family:'Pretendard';
+font-weight:600;
+font-size:15px;
+}
+
+button{
+padding:12px 14px;
+margin:6px;
+border:none;
+border-radius:12px;
+cursor:pointer;
+font-weight:700;
+font-family:'Pretendard';
+}
+
+.btn{background:#333;color:white;}
+.btn-green{background:#4CAF50;color:white;}
+
+.btn-start{
+background:linear-gradient(135deg,#ff6b6b,#ffb347);
+color:white;
+font-weight:900;
+width:100%;
+padding:14px;
+font-size:16px;
+border-radius:12px;
+}
+
+.section-title{
+font-size:18px;
+font-weight:900;
+margin-bottom:6px;
+}
+
+.stage{
+font-size:14px;
+font-weight:700;
+color:#666;
+margin-bottom:12px;
+}
+
+.vs-box{
+background:white;
+padding:25px;
+border-radius:18px;
+box-shadow:0 10px 25px rgba(0,0,0,0.1);
+}
+
+.vs-row{
+display:flex;
+gap:10px;
+}
+
+.vs-btn{
+flex:1;
+padding:16px;
+background:#f5f5f5;
+border-radius:12px;
+border:none;
+font-weight:600;
+cursor:pointer;
+}
+
+.progress{
+height:8px;
+background:#ddd;
+border-radius:10px;
+overflow:hidden;
+margin-top:12px;
+}
+
+.bar{
+height:100%;
+width:0%;
+background:#4CAF50;
+transition:0.3s;
+}
+
+.rank-item{
+display:flex;
+justify-content:space-between;
+padding:10px;
+border-bottom:1px solid #eee;
+}
+
+.first{
+font-weight:900;
+background:#fff2f2;
+color:#e53935;
+border-radius:8px;
+}
+
+.toast{
+position:fixed;
+top:20px;
+left:50%;
+transform:translateX(-50%);
+background:#333;
+color:white;
+padding:10px 16px;
+border-radius:20px;
+display:none;
+font-weight:600;
+}
+</style>
+</head>
+
+<body>
+
+<div class="toast" id="toast"></div>
+
+<div class="header">🍱 급식 선호도 조사 🍱</div>
+
+<div class="container">
+
+<div class="card">
+<h3>메뉴 평가</h3>
+<input id="menuInput" placeholder="예: 돈까스, 김치찌개, 제육볶음">
+<br>
+<button class="btn-green" onclick="evalMenu(3)">좋아요</button>
+<button class="btn-green" onclick="evalMenu(-3)">싫어요</button>
+</div>
+
+<div class="card">
+<h3>🏆 급식 월드컵</h3>
+
+<button class="btn" onclick="setType('rice')">밥류</button>
+<button class="btn" onclick="setType('soup')">국류</button>
+<button class="btn" onclick="setType('main')">반찬</button>
+<button class="btn" onclick="setType('dessert')">디저트</button>
+
+<div id="roundBox" style="display:none;">
+<h3>강 선택</h3>
+<div id="roundButtons"></div>
+</div>
+
+<br>
+<button class="btn-start" onclick="start()">시작</button>
+</div>
+
+<div id="worldcup"></div>
+
+<div class="card">
+<h3>📊 랭킹</h3>
+<div id="rank"></div>
+</div>
+
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
+
+const firebaseConfig = {
+apiKey: "AIzaSyDdLcweVfAIdcWNiWhLuFv8d1Cosm8QiK4",
+authDomain: "python-project-bc7f5.firebaseapp.com",
+databaseURL: "https://python-project-bc7f5-default-rtdb.asia-southeast1.firebasedatabase.app",
+projectId: "python-project-bc7f5",
+appId: "1:1061392644241:web:e501da79743334bb0ca730"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* ================= FIREBASE ================= */
+
+function addScore(food, point){
+const foodRef = ref(db, "scores/" + food);
+
+onValue(foodRef, (snap)=>{
+let cur = snap.val();
+if(cur === null) cur = 0;
+set(foodRef, cur + point);
+}, { onlyOnce:true });
+}
+
+/* ================= MENU ================= */
+
+window.evalMenu=function(v){
+let m=document.getElementById("menuInput").value.trim();
+if(!m) return;
+addScore(m,v);
+toast("반영됨");
+};
+
+/* ================= STATE ================= */
+
+let type=null;
+let round=0;
+let pool=[];
+let nextPool=[];
+let matchIndex=0;
+
+/* ================= TYPE ================= */
+
+window.setType=function(t){
+type=t;
+document.getElementById("roundBox").style.display="block";
+
+let html="";
+if(t==="main"){
+html=`
+<button onclick="setRound(8)">8강</button>
+<button onclick="setRound(16)">16강</button>
+<button onclick="setRound(32)">32강</button>
+`;
+}else{
+html=`
+<button onclick="setRound(8)">8강</button>
+<button onclick="setRound(16)">16강</button>
+`;
+}
+
+document.getElementById("roundButtons").innerHTML=html;
+};
+
+window.setRound=function(r){
+round=r;
+toast(r+"강 선택");
+};
+
+/* ================= START ================= */
+
+window.start=function(){
+
+const ricePool=[
+"스팸김치볶음밥","소고기나물비빔밥&고추장","나물비빔밥&고추장",
+"식물성장조림버터비빔밥","김밥볶음밥&파래김","베이컨계란볶음밥",
+"소고기마늘쫑볶음밥","전복솥밥","소고기곤드레밥","바몬드카레",
+"단호박카레","토마토하이라이스","카레하이라이스","자장소스",
+"미니후리가케밥","참치마요김쌈"
+];
+
+const soupPool=[
+"부대찌개","육개장","등뼈감자탕","장각삼계탕","닭곰탕&당면",
+"한우설렁탕&소면","한우나주곰탕","안성장터국밥","얼큰우거지순대국밥",
+"낙지연포탕","소고기샤브샤브","참치김치찌개","돈육김치찌개",
+"호박고추장찌개","마라탕","얼큰순두부찌개"
+];
+
+const mainPool=[
+"통등심돈까스&소스","수제등심돈까스&소스","치즈롤까스&소스",
+"한반도돈까스","오코노코치킨까스","갈릭하트피쉬까스&소스",
+"치킨가라아게&머스타드","치킨텐더&머스타드","치킨너겟&허니머스타드",
+"닭강정","간장찜닭","분모자로제찜닭","안동찜닭","뼈없는닭갈비",
+"인삼닭찜","닭봉조림","삼겹제육볶음","제육볶음","숯불향간장불고기",
+"소고기불고기","언양식불고기","훈제오리볶음","오리주물럭","짜장오리불고기",
+"한방보쌈&쌈장","마늘보쌈","오향장육&무쌈","LA돼지갈비찜","돼지LA갈비",
+"목살스테이크&해쉬브라운&소스","목화솜탕수육","등심탕수육"
+];
+
+const dessertPool=[
+"골드키위","수박","참외","오렌지","감귤","청포도","파인애플",
+"블루베리","사과","자두","감자빵","스승의날케이크",
+"무궁화오레오케이크","지구지킴이케이크","설레임","초코마카롱"
+];
+
+let base =
+type==="rice"?ricePool:
+type==="soup"?soupPool:
+type==="main"?mainPool:
+dessertPool;
+
+pool=[...base].sort(()=>Math.random()-0.5).slice(0,round);
+
+if(pool.length%2===1) pool.pop();
+
+nextPool=[];
+matchIndex=0;
+
+render();
+};
+
+/* ================= RENDER ================= */
+
+function render(){
+
+let a=pool[matchIndex*2];
+let b=pool[matchIndex*2+1];
+
+if(!a || !b){
+pool=[...nextPool];
+nextPool=[];
+matchIndex=0;
+
+if(pool.length===1){
+end();
+return;
+}
+render();
+return;
+}
+
+/* ✅ 핵심 수정: 진행률 pool 기준 */
+let progress = pool.length > 0
+? (matchIndex / (pool.length / 2)) * 100
+: 0;
+
+document.getElementById("worldcup").innerHTML=`
+<div class="card">
+<div class="stage">${pool.length}강 진행 중</div>
+
+<div class="vs-box">
+<div class="vs-row">
+<button class="vs-btn" onclick="pick(0)">${a}</button>
+<button class="vs-btn" onclick="pick(1)">${b}</button>
+</div>
+
+<div class="progress">
+<div class="bar" style="width:${progress}%"></div>
+</div>
+
+</div>
+</div>
+`;
+}
+
+window.pick=function(n){
+let a=pool[matchIndex*2];
+let b=pool[matchIndex*2+1];
+let win=n===0?a:b;
+
+nextPool.push(win);
+matchIndex++;
+render();
+};
+
+function end(){
+let winner=pool[0];
+addScore(winner,10);
+
+document.getElementById("worldcup").innerHTML=`
+<div class="card">
+<h2>🏆 우승</h2>
+<h1>${winner}</h1>
+</div>
+`;
+}
+
+/* ================= RANK ================= */
+
+function showRank(){
+const rankRef=ref(db,"scores");
+
+onValue(rankRef,(snap)=>{
+let data=snap.val()||{};
+let arr=Object.entries(data).sort((a,b)=>b[1]-a[1]);
+
+let html="";
+let r=1, prev=null;
+
+for(let i=0;i<arr.length;i++){
+if(prev!==null && arr[i][1]<prev) r=i+1;
+prev=arr[i][1];
+
+html+=`
+<div class="rank-item ${r===1?'first':''}">
+<div>${r}위</div>
+<div>${arr[i][0]}</div>
+<div>${arr[i][1]}점</div>
+</div>
+`;
+}
+
+document.getElementById("rank").innerHTML=html;
+});
+}
+
+showRank();
+
+/* ================= TOAST ================= */
+
+function toast(msg){
+const el=document.getElementById("toast");
+el.innerText=msg;
+el.style.display="block";
+setTimeout(()=>el.style.display="none",1200);
+}
+
+</script>
+
+</body>
+</html>
